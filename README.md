@@ -7,8 +7,9 @@ A GitHub Action that handles semantic versioning for Maven and Node.js projects.
 - ✅ **Semantic Versioning** - Proper major.minor.patch bumping
 - ✅ **Release Stages** - alpha, beta, final, snapshot support  
 - ✅ **Multi-Platform** - Maven (pom.xml) + Node.js (package.json)
+- ✅ **Flexible File Detection** - Works with Maven-only, Node.js-only, or hybrid projects
 - ✅ **Development Versions** - Automatic next dev version calculation
-- ✅ **Flexible** - Configurable file paths
+- ✅ **Configurable** - Custom file paths and intelligent fallbacks
 
 ## Usage
 
@@ -36,6 +37,32 @@ A GitHub Action that handles semantic versioning for Maven and Node.js projects.
     frontend-file: 'ui/package.json'
 ```
 
+### Node.js-Only Projects
+
+```yaml
+- name: Bump version in Node.js project
+  id: bump
+  uses: mherman22/semantic-version-bump-action@v1
+  with:
+    version-type: 'minor'
+    release-stage: 'beta'
+    backend-file: 'nonexistent.xml'  # Will be ignored if doesn't exist
+    frontend-file: 'package.json'    # Version read from here
+```
+
+### Maven-Only Projects
+
+```yaml
+- name: Bump version in Maven project
+  id: bump
+  uses: mherman22/semantic-version-bump-action@v1
+  with:
+    version-type: 'fix'
+    release-stage: 'final'
+    backend-file: 'pom.xml'          # Version read from here
+    frontend-file: 'nonexistent.json' # Will be ignored if doesn't exist
+```
+
 ## Inputs
 
 | Input | Description | Required | Default |
@@ -55,6 +82,23 @@ A GitHub Action that handles semantic versioning for Maven and Node.js projects.
 | `stage-label` | The release stage label | `beta` |
 | `next-dev-version` | The next development version (for final releases) | `1.2.4-SNAPSHOT` |
 | `current-version` | The current version before bump | `1.2.2-SNAPSHOT` |
+
+## File Detection Logic
+
+The action intelligently detects project types and reads versions from available files:
+
+1. **Backend file first** - Tries to read from `backend-file` (default: `pom.xml`)
+2. **Frontend fallback** - If backend file doesn't exist, reads from `frontend-file` (default: `package.json`)
+3. **Version format detection** - Supports both Maven (`<version>1.2.3</version>`) and NPM (`"version": "1.2.3"`) formats
+4. **Flexible updates** - Updates only the files that exist in your project
+
+### Supported Project Types
+
+| Project Type | Version Source | Updated Files |
+|--------------|----------------|---------------|
+| **Maven + Node.js** | `pom.xml` → `package.json` | Both files |
+| **Maven only** | `pom.xml` | `pom.xml` only |
+| **Node.js only** | `package.json` | `package.json` only |
 
 ## Examples
 

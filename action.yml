@@ -49,9 +49,41 @@ runs:
       id: bump
       shell: bash
       run: |
-        # Extract and parse current version
-        CURRENT=$(grep '<version>' ${{ inputs.backend-file }} | head -1 | sed 's/.*<version>\([^<]*\)<\/version>.*/\1/')
-        [[ "$CURRENT" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]] || { echo "❌ Invalid version: $CURRENT"; exit 1; }
+        # Extract and parse current version from available files
+        CURRENT=""
+        VERSION_SOURCE=""
+
+        # Try backend file first (Maven pom.xml)
+        if [ -f "${{ inputs.backend-file }}" ]; then
+          echo "🔍 Reading version from backend file: ${{ inputs.backend-file }}"
+          CURRENT=$(grep '<version>' ${{ inputs.backend-file }} | head -1 | sed 's/.*<version>\([^<]*\)<\/version>.*/\1/' 2>/dev/null || echo "")
+          VERSION_SOURCE="backend"
+        fi
+
+        # If no version found in backend, try frontend file (Node.js package.json)
+        if [ -z "$CURRENT" ] && [ -f "${{ inputs.frontend-file }}" ]; then
+          echo "🔍 Reading version from frontend file: ${{ inputs.frontend-file }}"
+          CURRENT=$(grep '"version"' ${{ inputs.frontend-file }} | head -1 | sed 's/.*"version":\s*"\([^"]*\)".*/\1/' 2>/dev/null || echo "")
+          VERSION_SOURCE="frontend"
+        fi
+
+        # Validate we found a version
+        if [ -z "$CURRENT" ]; then
+          echo "❌ Could not extract version from either:"
+          echo "   Backend file: ${{ inputs.backend-file }} (exists: $([ -f "${{ inputs.backend-file }}" ] && echo "yes" || echo "no"))"
+          echo "   Frontend file: ${{ inputs.frontend-file }} (exists: $([ -f "${{ inputs.frontend-file }}" ] && echo "yes" || echo "no"))"
+          echo "💡 Ensure at least one file exists and contains a valid version"
+          exit 1
+        fi
+
+        echo "📦 Found current version: $CURRENT (from $VERSION_SOURCE file)"
+
+        # Parse semantic version components
+        [[ "$CURRENT" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]] || {
+          echo "❌ Invalid semantic version format: $CURRENT"
+          echo "💡 Expected format: X.Y.Z or X.Y.Z-SUFFIX (e.g., 1.2.3, 2.0.0-SNAPSHOT)"
+          exit 1
+        }
 
         MAJOR=${BASH_REMATCH[1]} MINOR=${BASH_REMATCH[2]} PATCH=${BASH_REMATCH[3]}
 
@@ -81,19 +113,41 @@ runs:
             NEXT_DEV_VERSION="$BASE_VERSION-SNAPSHOT" ;;
         esac
 
+        # Update files based on what exists
+        FILES_UPDATED=0
+        FRONTEND_VERSION="none"
+
         # Update backend file (Maven pom.xml)
         if [ -f "${{ inputs.backend-file }}" ]; then
           sed -i "s/<version>[^<]*<\/version>/<version>$RELEASE_TAG<\/version>/" ${{ inputs.backend-file }}
           echo "✅ Updated ${{ inputs.backend-file }}: $CURRENT → $RELEASE_TAG"
+          FILES_UPDATED=$((FILES_UPDATED + 1))
         fi
 
         # Update frontend file (Node.js package.json)
-        FRONTEND_VERSION="none"
         if [ -f "${{ inputs.frontend-file }}" ]; then
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$BASE_VERSION\"/" ${{ inputs.frontend-file }}
-          FRONTEND_VERSION="$BASE_VERSION"
-          echo "✅ Updated ${{ inputs.frontend-file }}: $BASE_VERSION"
+          # For frontend, we use BASE_VERSION (without stage suffix for most cases)
+          FRONTEND_RELEASE_VERSION="$BASE_VERSION"
+          # Exception: for snapshot releases, keep the -SNAPSHOT suffix
+          if [ "${{ inputs.release-stage }}" = "snapshot" ]; then
+            FRONTEND_RELEASE_VERSION="$RELEASE_TAG"
+          fi
+
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$FRONTEND_RELEASE_VERSION\"/" ${{ inputs.frontend-file }}
+          FRONTEND_VERSION="$FRONTEND_RELEASE_VERSION"
+          echo "✅ Updated ${{ inputs.frontend-file }}: $CURRENT → $FRONTEND_RELEASE_VERSION"
+          FILES_UPDATED=$((FILES_UPDATED + 1))
         fi
+
+        # Ensure at least one file was updated
+        if [ $FILES_UPDATED -eq 0 ]; then
+          echo "❌ No files were updated!"
+          echo "   Backend file ${{ inputs.backend-file }}: $([ -f "${{ inputs.backend-file }}" ] && echo "exists" || echo "missing")"
+          echo "   Frontend file ${{ inputs.frontend-file }}: $([ -f "${{ inputs.frontend-file }}" ] && echo "exists" || echo "missing")"
+          exit 1
+        fi
+
+        echo "📝 Successfully updated $FILES_UPDATED file(s)"
 
         # Set outputs
         cat >> "$GITHUB_OUTPUT" << EOF
