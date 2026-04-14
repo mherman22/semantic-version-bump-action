@@ -1,0 +1,108 @@
+name: 'Semantic Version Bump'
+description: 'Bumps semantic versions in Maven (pom.xml) and Node.js (package.json) projects'
+branding:
+  icon: 'arrow-up'
+  color: 'green'
+
+inputs:
+  version-type:
+    description: 'Type of version bump (major, minor, fix)'
+    required: true
+    default: 'fix'
+  release-stage:
+    description: 'Release stage (alpha, beta, final, snapshot)'
+    required: true
+    default: 'alpha'
+  backend-file:
+    description: 'Path to Maven pom.xml file'
+    required: false
+    default: 'pom.xml'
+  frontend-file:
+    description: 'Path to Node.js package.json file'
+    required: false
+    default: 'frontend/package.json'
+
+outputs:
+  new-version:
+    description: 'The new semantic version (without suffix)'
+    value: ${{ steps.bump.outputs.new_version }}
+  release-tag:
+    description: 'The release tag with stage suffix'
+    value: ${{ steps.bump.outputs.release_tag }}
+  frontend-version:
+    description: 'The frontend version'
+    value: ${{ steps.bump.outputs.frontend_version }}
+  stage-label:
+    description: 'The release stage label'
+    value: ${{ steps.bump.outputs.stage_label }}
+  next-dev-version:
+    description: 'The next development version (for final releases)'
+    value: ${{ steps.bump.outputs.next_dev_version }}
+  current-version:
+    description: 'The current version before bump'
+    value: ${{ steps.bump.outputs.current_version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Bump semantic version
+      id: bump
+      shell: bash
+      run: |
+        # Extract and parse current version
+        CURRENT=$(grep '<version>' ${{ inputs.backend-file }} | head -1 | sed 's/.*<version>\([^<]*\)<\/version>.*/\1/')
+        [[ "$CURRENT" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]] || { echo "❌ Invalid version: $CURRENT"; exit 1; }
+
+        MAJOR=${BASH_REMATCH[1]} MINOR=${BASH_REMATCH[2]} PATCH=${BASH_REMATCH[3]}
+
+        # Apply version bump
+        case "${{ inputs.version-type }}" in
+          "major") MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+          "minor") MINOR=$((MINOR + 1)); PATCH=0 ;;
+          "fix") PATCH=$((PATCH + 1)) ;;
+        esac
+
+        BASE_VERSION="$MAJOR.$MINOR.$PATCH"
+
+        # Set release tag and next dev version
+        case "${{ inputs.release-stage }}" in
+          "alpha"|"beta")
+            RELEASE_TAG="$BASE_VERSION-${{ inputs.release-stage }}"
+            NEXT_DEV_VERSION="$BASE_VERSION-SNAPSHOT" ;;
+          "final")
+            RELEASE_TAG="$BASE_VERSION"
+            case "${{ inputs.version-type }}" in
+              "major") NEXT_DEV_VERSION="$((MAJOR + 1)).0.0-SNAPSHOT" ;;
+              "minor") NEXT_DEV_VERSION="$MAJOR.$((MINOR + 1)).0-SNAPSHOT" ;;
+              "fix") NEXT_DEV_VERSION="$MAJOR.$MINOR.$((PATCH + 1))-SNAPSHOT" ;;
+            esac ;;
+          "snapshot")
+            RELEASE_TAG="$BASE_VERSION-SNAPSHOT"
+            NEXT_DEV_VERSION="$BASE_VERSION-SNAPSHOT" ;;
+        esac
+
+        # Update backend file (Maven pom.xml)
+        if [ -f "${{ inputs.backend-file }}" ]; then
+          sed -i "s/<version>[^<]*<\/version>/<version>$RELEASE_TAG<\/version>/" ${{ inputs.backend-file }}
+          echo "✅ Updated ${{ inputs.backend-file }}: $CURRENT → $RELEASE_TAG"
+        fi
+
+        # Update frontend file (Node.js package.json)
+        FRONTEND_VERSION="none"
+        if [ -f "${{ inputs.frontend-file }}" ]; then
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$BASE_VERSION\"/" ${{ inputs.frontend-file }}
+          FRONTEND_VERSION="$BASE_VERSION"
+          echo "✅ Updated ${{ inputs.frontend-file }}: $BASE_VERSION"
+        fi
+
+        # Set outputs
+        cat >> "$GITHUB_OUTPUT" << EOF
+        current_version=$CURRENT
+        new_version=$BASE_VERSION
+        release_tag=$RELEASE_TAG
+        frontend_version=$FRONTEND_VERSION
+        stage_label=${{ inputs.release-stage }}
+        next_dev_version=$NEXT_DEV_VERSION
+        EOF
+
+        echo "Version bump: $CURRENT → $RELEASE_TAG"
