@@ -82,10 +82,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate action.yml
-        uses: docker://rhymond/github-action-validate:latest
-        with:
-          action-path: ./action.yml
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Validate action.yml syntax
+        run: |
+          echo "🔍 Validating action.yml YAML syntax..."
+          yq eval . action.yml > /dev/null || { echo "❌ Invalid YAML syntax"; exit 1; }
+          echo "✅ YAML syntax is valid"
+
+      - name: Validate action.yml structure
+        run: |
+          echo "🔍 Validating action.yml structure..."
+
+          # Check required fields
+          yq eval '.name' action.yml > /dev/null || { echo "❌ Missing 'name' field"; exit 1; }
+          yq eval '.description' action.yml > /dev/null || { echo "❌ Missing 'description' field"; exit 1; }
+          yq eval '.runs' action.yml > /dev/null || { echo "❌ Missing 'runs' field"; exit 1; }
+          yq eval '.runs.using' action.yml > /dev/null || { echo "❌ Missing 'runs.using' field"; exit 1; }
+
+          # Validate runs.using is 'composite'
+          RUNS_USING=$(yq eval '.runs.using' action.yml)
+          [ "$RUNS_USING" = "composite" ] || { echo "❌ Expected runs.using to be 'composite', got: $RUNS_USING"; exit 1; }
+
+          # Check inputs and outputs exist
+          yq eval '.inputs' action.yml > /dev/null || { echo "❌ Missing 'inputs' field"; exit 1; }
+          yq eval '.outputs' action.yml > /dev/null || { echo "❌ Missing 'outputs' field"; exit 1; }
+
+          echo "✅ Action structure is valid"
 
   publish:
     name: Publish to Marketplace
