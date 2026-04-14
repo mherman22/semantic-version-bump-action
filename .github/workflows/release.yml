@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+$' | head -2 | tail -1 || echo "")
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+
+          echo "Generating changelog from $PREVIOUS_TAG to ${{ github.ref_name }}..."
+
+          CHANGELOG=$(git log --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))" $PREVIOUS_TAG..${{ github.ref_name }} | head -50)
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="- Initial release"
+          fi
+
+          cat >> "$GITHUB_OUTPUT" << EOF
+          changelog<<CHANGELOG_EOF
+          ## What's Changed
+
+          $CHANGELOG
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREVIOUS_TAG...${{ github.ref_name }}
+          CHANGELOG_EOF
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Semantic Version Bump ${{ github.ref_name }}
+          body: |
+            # 🚀 Semantic Version Bump Action ${{ github.ref_name }}
+
+            A GitHub Action for semantic version bumping in Maven and Node.js projects.
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## 📦 Usage
+
+            ```yaml
+            - name: Bump version
+              uses: mherman22/semantic-version-bump-action@${{ github.ref_name }}
+              with:
+                version-type: 'minor'
+                release-stage: 'beta'
+            ```
+
+            ## 🔗 Links
+
+            - 📚 [Documentation](https://github.com/mherman22/semantic-version-bump-action#readme)
+            - 🛠️ [Marketplace](https://github.com/marketplace/actions/semantic-version-bump)
+            - 🐛 [Issues](https://github.com/mherman22/semantic-version-bump-action/issues)
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

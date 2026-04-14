@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  test:
+    name: Test Action
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version-type: [major, minor, fix]
+        release-stage: [alpha, beta, final, snapshot]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create test pom.xml
+        run: |
+          cat > pom.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project>
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>test</groupId>
+            <artifactId>test</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+          </project>
+          EOF
+
+      - name: Create test package.json
+        run: |
+          mkdir -p frontend
+          cat > frontend/package.json << 'EOF'
+          {
+            "name": "test-frontend",
+            "version": "1.0.0",
+            "description": "Test frontend"
+          }
+          EOF
+
+      - name: Test action
+        id: test
+        uses: ./
+        with:
+          version-type: ${{ matrix.version-type }}
+          release-stage: ${{ matrix.release-stage }}
+
+      - name: Verify outputs
+        run: |
+          echo "Current version: ${{ steps.test.outputs.current-version }}"
+          echo "New version: ${{ steps.test.outputs.new-version }}"
+          echo "Release tag: ${{ steps.test.outputs.release-tag }}"
+          echo "Frontend version: ${{ steps.test.outputs.frontend-version }}"
+          echo "Stage label: ${{ steps.test.outputs.stage-label }}"
+          echo "Next dev version: ${{ steps.test.outputs.next-dev-version }}"
+
+          # Verify files were updated
+          grep -q "${{ steps.test.outputs.release-tag }}" pom.xml || exit 1
+          grep -q "${{ steps.test.outputs.new-version }}" frontend/package.json || exit 1
+
+      - name: Verify version format
+        run: |
+          # Check that release tag matches expected format
+          case "${{ matrix.release-stage }}" in
+            "alpha"|"beta")
+              [[ "${{ steps.test.outputs.release-tag }}" == *"-${{ matrix.release-stage }}" ]] || exit 1 ;;
+            "final")
+              [[ "${{ steps.test.outputs.release-tag }}" != *"-"* ]] || exit 1 ;;
+            "snapshot")
+              [[ "${{ steps.test.outputs.release-tag }}" == *"-SNAPSHOT" ]] || exit 1 ;;
+          esac
+
+  validate:
+    name: Validate Action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate action.yml
+        uses: docker://rhymond/github-action-validate:latest
+        with:
+          action-path: ./action.yml
+
+  publish:
+    name: Publish to Marketplace
+    if: github.event_name == 'release'
+    needs: [test, validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update marketplace info
+        run: |
+          echo "🎉 Version ${{ github.event.release.tag_name }} published to GitHub Marketplace!"
+          echo "📦 Semantic Version Bump Action now available at:"
+          echo "   https://github.com/marketplace/actions/semantic-version-bump"
