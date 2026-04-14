@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   release:
     name: Create Release
@@ -46,7 +51,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           name: Semantic Version Bump ${{ github.ref_name }}
+          make_latest: true
           body: |
             # 🚀 Semantic Version Bump Action ${{ github.ref_name }}
 
