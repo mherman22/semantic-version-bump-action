@@ -113,22 +113,3 @@ jobs:
 
           echo "✅ Action structure is valid"
 
-  publish:
-    name: Publish to Marketplace
-    if: github.event_name == 'release'
-    needs: [test, validate]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Update marketplace info
-        run: |
-          echo "🎉 Version ${{ github.event.release.tag_name }} published to GitHub Marketplace!"
-          echo "📦 Semantic Version Bump Action now available at:"
-          echo "   https://github.com/marketplace/actions/semantic-version-bump"

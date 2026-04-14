@@ -73,3 +73,17 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Marketplace Publishing
+        run: |
+          echo "🎉 Release ${{ github.ref_name }} created successfully!"
+          echo ""
+          echo "📦 GitHub will automatically publish this action to the marketplace because:"
+          echo "  ✅ Repository contains action.yml"
+          echo "  ✅ Release was created (not just tagged)"
+          echo "  ✅ Repository is public"
+          echo ""
+          echo "🔗 Action will be available at:"
+          echo "   https://github.com/marketplace/actions/semantic-version-bump"
+          echo ""
+          echo "⏱️ Marketplace indexing usually takes a few minutes..."
